@@ -28,6 +28,23 @@ jobs:
           sudo chmod +x /usr/local/bin/cog
           cog --version
 
+      - name: Verify token present
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+        run: |
+          if [ -z "$REPLICATE_API_TOKEN" ]; then
+            echo "ERROR: REPLICATE_API_TOKEN secret is empty or not set"
+            exit 1
+          fi
+          echo "Token length: ${#REPLICATE_API_TOKEN} chars"
+          echo "Token prefix: ${REPLICATE_API_TOKEN:0:4}..."
+
+      - name: Docker login to r8.im registry
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+        run: |
+          echo "$REPLICATE_API_TOKEN" | docker login r8.im -u replicate --password-stdin
+
       - name: Push to Replicate
         env:
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
