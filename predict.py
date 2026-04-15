@@ -152,17 +152,18 @@ class Predictor(BasePredictor):
             if background is not None:
                 # Composite foreground (RGB + alpha from alpha video) onto background
                 # Output: small H.264 MP4 (~10-50MB for a typical video)
+                # CRITICAL: -loop 1 on background image + shortest=1 based on foreground
                 bg_path = str(background)
-                print(f"Compositing onto background: {bg_path}")
+                print(f"Compositing onto background: {bg_path}", flush=True)
                 output_path = "/tmp/matted_composited.mp4"
                 cmd = [
                     "ffmpeg", "-y",
-                    "-i", actual_fg,       # [0] RGB foreground
-                    "-i", actual_alpha,    # [1] grayscale alpha
-                    "-i", bg_path,         # [2] background image
+                    "-i", actual_fg,                  # [0] RGB foreground video
+                    "-i", actual_alpha,               # [1] grayscale alpha video
+                    "-loop", "1", "-i", bg_path,      # [2] looped background image
                     "-filter_complex",
                     "[0:v][1:v]alphamerge[fg];"
-                    "[2:v]scale=1920:1080[bg];"
+                    "[2:v]scale=1920:1080,setsar=1[bg];"
                     "[bg][fg]overlay=0:0:shortest=1,format=yuv420p[out]",
                     "-map", "[out]",
                     "-map", "0:a?",
@@ -174,9 +175,15 @@ class Predictor(BasePredictor):
                     "-movflags", "+faststart",
                     output_path,
                 ]
+                print(f"Running: {' '.join(cmd)}", flush=True)
                 result = subprocess.run(cmd, capture_output=True, text=True)
+                print(f"FFmpeg stderr (last 2000): {result.stderr[-2000:]}", flush=True)
                 if result.returncode != 0:
                     raise RuntimeError(f"FFmpeg composite failed: {result.stderr[-500:]}")
+                # Verify output
+                if os.path.exists(output_path):
+                    size = os.path.getsize(output_path)
+                    print(f"Output file size: {size / 1024 / 1024:.2f} MB", flush=True)
                 return Path(output_path)
             else:
                 # No background provided: return ProRes 4444 RGBA (legacy behavior)
