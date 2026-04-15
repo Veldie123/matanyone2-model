@@ -23,10 +23,47 @@ sys.path.insert(0, os.path.dirname(__file__))
 class Predictor(BasePredictor):
     def setup(self):
         """Load MatAnyone 2 model — runs once when container starts."""
-        from matanyone2 import MatAnyone2, InferenceCore
+        import sys
+        import traceback
+        print("=== SETUP START ===", flush=True)
+        try:
+            import torch
+            print(f"PyTorch: {torch.__version__}", flush=True)
+            print(f"CUDA available: {torch.cuda.is_available()}", flush=True)
+            if torch.cuda.is_available():
+                print(f"CUDA device: {torch.cuda.get_device_name(0)}", flush=True)
+                print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB", flush=True)
+        except Exception as e:
+            print(f"Torch check error: {e}", flush=True)
 
-        self.model = MatAnyone2.from_pretrained("PeiqingYang/MatAnyone2")
-        self.processor = InferenceCore(self.model, device="cuda:0")
+        try:
+            print("Importing matanyone2...", flush=True)
+            from matanyone2 import MatAnyone2, InferenceCore
+            print("Import OK", flush=True)
+        except Exception as e:
+            print(f"IMPORT FAILED: {e}", flush=True)
+            traceback.print_exc()
+            raise
+
+        try:
+            print("Loading MatAnyone 2 model weights...", flush=True)
+            self.model = MatAnyone2.from_pretrained("PeiqingYang/MatAnyone2")
+            print("Model loaded", flush=True)
+        except Exception as e:
+            print(f"MODEL LOAD FAILED: {e}", flush=True)
+            traceback.print_exc()
+            raise
+
+        try:
+            print("Initializing InferenceCore on cuda:0...", flush=True)
+            self.processor = InferenceCore(self.model, device="cuda:0")
+            print("Processor ready", flush=True)
+        except Exception as e:
+            print(f"PROCESSOR INIT FAILED: {e}", flush=True)
+            traceback.print_exc()
+            raise
+
+        print("=== SETUP COMPLETE ===", flush=True)
 
     def predict(
         self,
