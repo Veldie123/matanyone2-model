@@ -53,7 +53,11 @@ class Predictor(BasePredictor):
         """Run MatAnyone 2 video matting and return foreground with alpha."""
 
         with tempfile.TemporaryDirectory() as workdir:
-            input_path = str(video)
+            # IMPORTANT: Cog downloads inputs to files WITHOUT extension
+            # (e.g. /tmp/tmpXXXXdownload). MatAnyone 2's ffmpeg call fails
+            # without a proper extension. Copy to a renamed file first.
+            input_path = os.path.join(workdir, "input.mp4")
+            subprocess.run(["cp", str(video), input_path], check=True)
 
             # Generate mask if not provided
             if mask is None:
@@ -62,101 +66,61 @@ class Predictor(BasePredictor):
                     input_path, mask_path, lower_green_h, upper_green_h
                 )
             else:
-                mask_path = str(mask)
+                # Copy mask too (same issue with extensions)
+                mask_path = os.path.join(workdir, "mask.png")
+                subprocess.run(["cp", str(mask), mask_path], check=True)
 
-            # Run inference
+            # Run inference — returns tuple (foreground_path, alpha_path)
             output_dir = os.path.join(workdir, "output")
             os.makedirs(output_dir, exist_ok=True)
 
             start = time.time()
-            self.processor.process_video(
+            result = self.processor.process_video(
                 input_path=input_path,
                 mask_path=mask_path,
                 output_path=output_dir,
             )
             elapsed = time.time() - start
             print(f"Inference completed in {elapsed:.1f}s")
+            print(f"process_video returned: {result}")
 
-            # Find output files
-            output_files = os.listdir(output_dir)
-            print(f"Output files: {output_files}")
-
-            fg_candidates = [
-                f
-                for f in output_files
-                if any(
-                    k in f.lower()
-                    for k in ["foreground", "fg", "com"]
-                )
-            ]
-            alpha_candidates = [
-                f
-                for f in output_files
-                if any(
-                    k in f.lower()
-                    for k in ["alpha", "pha", "matte"]
-                )
-            ]
-
-            merged_path = os.path.join(workdir, "matted.mov")
-
-            if fg_candidates and alpha_candidates:
-                actual_fg = os.path.join(output_dir, fg_candidates[0])
-                actual_alpha = os.path.join(
-                    output_dir, alpha_candidates[0]
-                )
-
-                # Merge into ProRes 4444 RGBA
-                cmd = [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    actual_fg,
-                    "-i",
-                    actual_alpha,
-                    "-filter_complex",
-                    "[0:v][1:v]alphamerge[out]",
-                    "-map",
-                    "[out]",
-                    "-c:v",
-                    "prores_ks",
-                    "-profile:v",
-                    "4",
-                    "-pix_fmt",
-                    "yuva444p10le",
-                    "-an",
-                    merged_path,
-                ]
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True
-                )
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        f"FFmpeg merge failed: {result.stderr[-500:]}"
-                    )
+            # process_video returns a tuple (foreground_path, alpha_path)
+            if isinstance(result, (tuple, list)) and len(result) >= 2:
+                actual_fg = str(result[0])
+                actual_alpha = str(result[1])
             else:
-                # Single output file — use as-is
-                video_files = [
-                    f
-                    for f in output_files
-                    if f.endswith((".mp4", ".mov", ".avi"))
-                ]
-                if video_files:
-                    merged_path = os.path.join(
-                        output_dir, video_files[0]
-                    )
-                else:
-                    raise RuntimeError(
-                        f"No output files found: {output_files}"
-                    )
+                # Fallback: search the output directory
+                print(f"Unexpected return type, searching output_dir")
+                output_files = os.listdir(output_dir)
+                print(f"Output files: {output_files}")
+                fg_candidates = [f for f in output_files if any(k in f.lower() for k in ["foreground", "fg", "com"])]
+                alpha_candidates = [f for f in output_files if any(k in f.lower() for k in ["alpha", "pha", "matte"])]
+                if not fg_candidates or not alpha_candidates:
+                    raise RuntimeError(f"Could not find foreground/alpha outputs. Files: {output_files}")
+                actual_fg = os.path.join(output_dir, fg_candidates[0])
+                actual_alpha = os.path.join(output_dir, alpha_candidates[0])
 
-            # Copy to output path (cog needs a returned Path)
-            output_path = "/tmp/matted_output.mov"
-            subprocess.run(
-                ["cp", merged_path, output_path], check=True
-            )
+            print(f"Foreground: {actual_fg}")
+            print(f"Alpha: {actual_alpha}")
 
-            return Path(output_path)
+            # Merge RGB foreground + grayscale alpha into ProRes 4444 RGBA
+            merged_path = "/tmp/matted_output.mov"
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", actual_fg,
+                "-i", actual_alpha,
+                "-filter_complex", "[0:v][1:v]alphamerge[out]",
+                "-map", "[out]",
+                "-c:v", "prores_ks", "-profile:v", "4",
+                "-pix_fmt", "yuva444p10le",
+                "-an",
+                merged_path,
+            ]
+            merge_result = subprocess.run(cmd, capture_output=True, text=True)
+            if merge_result.returncode != 0:
+                raise RuntimeError(f"FFmpeg merge failed: {merge_result.stderr[-500:]}")
+
+            return Path(merged_path)
 
     def _generate_greenscreen_mask(
         self,
