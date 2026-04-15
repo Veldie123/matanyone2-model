@@ -1,0 +1,12 @@
+build:
+  gpu: true
+  cuda: "12.4"
+  python_version: "3.11"
+  python_requirements: "requirements.txt"
+  system_packages:
+    - "ffmpeg"
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+  run:
+    - "python -c 'from matanyone2 import MatAnyone2; MatAnyone2.from_pretrained(\"PeiqingYang/MatAnyone2\")'"
+predict: "predict.py:Predictor"

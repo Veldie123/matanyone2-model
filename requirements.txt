@@ -1,0 +1,5 @@
+torch>=2.4
+torchvision>=0.19
+matanyone2 @ git+https://github.com/pq-yang/MatAnyone2.git
+opencv-python-headless>=4.10
+numpy>=1.26,<2
