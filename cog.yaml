@@ -5,8 +5,13 @@ build:
   python_requirements: "requirements.txt"
   system_packages:
     - "ffmpeg"
-    - "libgl1-mesa-glx"
     - "libglib2.0-0"
+    - "git"
   run:
-    - "python -c 'from matanyone2 import MatAnyone2; MatAnyone2.from_pretrained(\"PeiqingYang/MatAnyone2\")'"
+    # Install thinplate manually (git dep used by matanyone2)
+    - "pip install git+https://github.com/cheind/py-thin-plate-spline"
+    # Install matanyone2 without deps to skip GUI/legacy packages (PySide6, cchardet, netifaces, etc.)
+    - "pip install --no-deps git+https://github.com/pq-yang/MatAnyone2.git"
+    # Pre-download model weights (avoids cold-start download)
+    - "python -c 'from matanyone2 import MatAnyone2; MatAnyone2.from_pretrained(\"PeiqingYang/MatAnyone2\")' || echo 'Model pre-download skipped (will download on first run)'"
 predict: "predict.py:Predictor"
