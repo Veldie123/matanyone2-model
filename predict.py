@@ -70,6 +70,15 @@ class Predictor(BasePredictor):
         video: Path = Input(
             description="Greenscreen video file (MP4/MOV)"
         ),
+        background: Path = Input(
+            description=(
+                "Optional background image (JPG/PNG). "
+                "If provided, foreground is composited onto this "
+                "background and a small H.264 MP4 is returned. "
+                "If not provided, returns ProRes 4444 RGBA (large)."
+            ),
+            default=None,
+        ),
         mask: Path = Input(
             description=(
                 "Optional first-frame binary mask PNG "
@@ -140,24 +149,53 @@ class Predictor(BasePredictor):
             print(f"Foreground: {actual_fg}")
             print(f"Alpha: {actual_alpha}")
 
-            # Merge RGB foreground + grayscale alpha into ProRes 4444 RGBA
-            merged_path = "/tmp/matted_output.mov"
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", actual_fg,
-                "-i", actual_alpha,
-                "-filter_complex", "[0:v][1:v]alphamerge[out]",
-                "-map", "[out]",
-                "-c:v", "prores_ks", "-profile:v", "4",
-                "-pix_fmt", "yuva444p10le",
-                "-an",
-                merged_path,
-            ]
-            merge_result = subprocess.run(cmd, capture_output=True, text=True)
-            if merge_result.returncode != 0:
-                raise RuntimeError(f"FFmpeg merge failed: {merge_result.stderr[-500:]}")
-
-            return Path(merged_path)
+            if background is not None:
+                # Composite foreground (RGB + alpha from alpha video) onto background
+                # Output: small H.264 MP4 (~10-50MB for a typical video)
+                bg_path = str(background)
+                print(f"Compositing onto background: {bg_path}")
+                output_path = "/tmp/matted_composited.mp4"
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", actual_fg,       # [0] RGB foreground
+                    "-i", actual_alpha,    # [1] grayscale alpha
+                    "-i", bg_path,         # [2] background image
+                    "-filter_complex",
+                    "[0:v][1:v]alphamerge[fg];"
+                    "[2:v]scale=1920:1080[bg];"
+                    "[bg][fg]overlay=0:0:shortest=1,format=yuv420p[out]",
+                    "-map", "[out]",
+                    "-map", "0:a?",
+                    "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                    "-profile:v", "high", "-level", "4.2",
+                    "-maxrate", "18M", "-bufsize", "36M",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-movflags", "+faststart",
+                    output_path,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg composite failed: {result.stderr[-500:]}")
+                return Path(output_path)
+            else:
+                # No background provided: return ProRes 4444 RGBA (legacy behavior)
+                merged_path = "/tmp/matted_output.mov"
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", actual_fg,
+                    "-i", actual_alpha,
+                    "-filter_complex", "[0:v][1:v]alphamerge[out]",
+                    "-map", "[out]",
+                    "-c:v", "prores_ks", "-profile:v", "4",
+                    "-pix_fmt", "yuva444p10le",
+                    "-an",
+                    merged_path,
+                ]
+                merge_result = subprocess.run(cmd, capture_output=True, text=True)
+                if merge_result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg merge failed: {merge_result.stderr[-500:]}")
+                return Path(merged_path)
 
     def _generate_greenscreen_mask(
         self,
