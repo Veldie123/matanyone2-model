@@ -163,7 +163,7 @@ class Predictor(BasePredictor):
                     "-loop", "1", "-i", bg_path,      # [2] looped background image
                     "-filter_complex",
                     "[0:v]despill=type=green:mix=0.7:expand=0.05[despilled];"
-                    "[1:v]erosion=radiusV=2:radiusH=2[alpha_eroded];"
+                    "[1:v]deflate,deflate[alpha_eroded];"
                     "[despilled][alpha_eroded]alphamerge[fg];"
                     "[fg]scale=1920:1080:flags=lanczos,setsar=1[fgscaled];"
                     "[2:v]scale=1920:1080,setsar=1[bg];"
