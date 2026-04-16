@@ -162,9 +162,11 @@ class Predictor(BasePredictor):
                     "-i", actual_alpha,               # [1] grayscale alpha video
                     "-loop", "1", "-i", bg_path,      # [2] looped background image
                     "-filter_complex",
-                    "[0:v][1:v]alphamerge[fg];"
+                    "[0:v]despill=type=green:mix=0.7:expand=0.05[despilled];"
+                    "[despilled][1:v]alphamerge[fg];"
+                    "[fg]scale=1920:1080:flags=lanczos,setsar=1[fgscaled];"
                     "[2:v]scale=1920:1080,setsar=1[bg];"
-                    "[bg][fg]overlay=0:0:shortest=1,format=yuv420p[out]",
+                    "[bg][fgscaled]overlay=0:0:shortest=1,format=yuv420p[out]",
                     "-map", "[out]",
                     "-map", "0:a?",
                     "-c:v", "libx264", "-preset", "medium", "-crf", "18",
