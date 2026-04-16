@@ -158,9 +158,10 @@ class Predictor(BasePredictor):
                 output_path = "/tmp/matted_composited.mp4"
                 cmd = [
                     "ffmpeg", "-y",
-                    "-i", actual_fg,                  # [0] RGB foreground video
+                    "-i", actual_fg,                  # [0] RGB foreground video (no audio)
                     "-i", actual_alpha,               # [1] grayscale alpha video
                     "-loop", "1", "-i", bg_path,      # [2] looped background image
+                    "-i", input_path,                 # [3] original video (audio source)
                     "-filter_complex",
                     "[0:v]despill=type=green:mix=0.7:expand=0.05[despilled];"
                     "[1:v]deflate,deflate[alpha_eroded];"
@@ -169,7 +170,7 @@ class Predictor(BasePredictor):
                     "[2:v]scale=1920:1080,setsar=1[bg];"
                     "[bg][fgscaled]overlay=0:0:shortest=1,format=yuv420p[out]",
                     "-map", "[out]",
-                    "-map", "0:a?",
+                    "-map", "3:a?",                   # audio from original input
                     "-c:v", "libx264", "-preset", "medium", "-crf", "18",
                     "-profile:v", "high", "-level", "4.2",
                     "-maxrate", "18M", "-bufsize", "36M",
