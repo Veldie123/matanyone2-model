@@ -121,10 +121,15 @@ class Predictor(BasePredictor):
             os.makedirs(output_dir, exist_ok=True)
 
             start = time.time()
+            # max_size=720 keeps GPU memory constant for long videos.
+            # MatAnyone 2's memory propagation accumulates over frames, so
+            # longer 1080p videos OOM even on A100 80GB. Internal resize to
+            # 720p prevents this while output can still be upscaled later.
             result = self.processor.process_video(
                 input_path=input_path,
                 mask_path=mask_path,
                 output_path=output_dir,
+                max_size=720,
             )
             elapsed = time.time() - start
             print(f"Inference completed in {elapsed:.1f}s")
